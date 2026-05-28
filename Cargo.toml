@@ -1,0 +1,51 @@
+[package]
+name = "nrf52840_aht20_rust"
+version = "0.1.0"
+edition = "2021"
+description = "Battery-powered BTHome v2 temperature/humidity sensor on nRF52840 + AHT20"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+embassy-executor = { version = "0.10.0", features = [
+    "platform-cortex-m",
+    "executor-thread",
+    "defmt",
+] }
+embassy-time = { version = "0.5.1", features = [
+    "defmt",
+    "defmt-timestamp-uptime",
+] }
+embassy-nrf = { version = "0.10.0", features = [
+    "nrf52840",
+    "time-driver-rtc1",
+    "gpiote",
+    "unstable-pac",
+    "time",
+    "defmt",
+] }
+
+cortex-m = { version = "0.7.7", features = [
+    "inline-asm",
+    "critical-section-single-core",
+] }
+cortex-m-rt = "0.7.5"
+
+defmt = "1.1.0"
+defmt-rtt = "1.2.0"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+
+# Production builds: stable, size-optimised, debug symbols retained for defmt frames.
+[profile.release]
+debug = 2
+lto = "fat"
+opt-level = "z"
+codegen-units = 1
+overflow-checks = false
+incremental = false
+
+# Dev builds: keep optimisations on (Embassy + nrf-hal don't run usefully at opt-level 0).
+[profile.dev]
+debug = 2
+opt-level = "s"
+lto = "off"
+overflow-checks = true
