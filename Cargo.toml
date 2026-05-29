@@ -9,32 +9,39 @@ license = "MIT OR Apache-2.0"
 embassy-executor = { version = "0.10.0", features = [
     "platform-cortex-m",
     "executor-thread",
-    "defmt",
 ] }
-embassy-time = { version = "0.5.1", features = [
-    "defmt",
-    "defmt-timestamp-uptime",
-] }
+embassy-time = { version = "0.5.1" }
 embassy-nrf = { version = "0.10.0", features = [
     "nrf52840",
     "time-driver-rtc1",
     "gpiote",
     "unstable-pac",
     "time",
-    "defmt",
 ] }
 
 cortex-m = { version = "0.7.7", features = [
     "inline-asm",
     "critical-section-single-core",
 ] }
-cortex-m-rt = "0.7.5"
+# `set-vtor`: this board boots MBR -> S140 SoftDevice -> our app. The
+# SoftDevice leaves VTOR pointing at its own vector table, so without this
+# the app runs but every interrupt (incl. the RTC1 tick embassy-time needs)
+# misvectors into the dormant SoftDevice and never reaches our handlers.
+# The feature makes cortex-m-rt set VTOR to our table at 0x26000 on reset.
+cortex-m-rt = { version = "0.7.5", features = ["set-vtor"] }
 
-defmt = "1.1.0"
-defmt-rtt = "1.2.0"
-panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+# `panic-halt` lets the firmware build without a probe. A future nicety would
+# be a panic handler that blinks an SOS on the LED, but logging a panic over
+# async USB-CDC isn't reliable from panic context, so halt-on-panic stands.
+panic-halt = "1.0"
 
-# Production builds: stable, size-optimised, debug symbols retained for defmt frames.
+# USB-CDC serial logging — the RTT/defmt replacement now that we flash over
+# USB. `embassy-usb-logger` pulls in embassy-usb 0.6 (embassy-usb-driver 0.2,
+# matching embassy-nrf 0.10) and routes the `log` facade out a CDC ACM port.
+embassy-usb-logger = "0.6.0"
+log = "0.4"
+
+# Production builds: stable, size-optimised.
 [profile.release]
 debug = 2
 lto = "fat"

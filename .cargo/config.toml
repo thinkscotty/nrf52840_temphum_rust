@@ -1,12 +1,10 @@
 [target.thumbv7em-none-eabihf]
-runner = "probe-rs run --chip nRF52840_xxAA"
+# Cargo invokes the runner with the freshly-built ELF as $1. The script
+# converts it to a .uf2 and copies it onto /Volumes/NICENANO if mounted.
+runner = "./scripts/flash-uf2.sh"
 rustflags = [
     "-C", "link-arg=-Tlink.x",
-    "-C", "link-arg=-Tdefmt.x",
 ]
 
 [build]
 target = "thumbv7em-none-eabihf"
-
-[env]
-DEFMT_LOG = "debug"
