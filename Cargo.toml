@@ -41,6 +41,20 @@ panic-halt = "1.0"
 embassy-usb-logger = "0.6.0"
 log = "0.4"
 
+[features]
+# Phase B test 4: deliberately stops petting a 5 s watchdog to prove it resets
+# the chip. Isolated behind a feature so the destructive reset doesn't interrupt
+# the readable tests 1–3. Run with `cargo run --release --features wdt-test`;
+# it resets once, confirms via RESETREAS.DOG on the next boot (no boot-loop),
+# then idles. Return to the diagnostic with a plain `cargo run --release`.
+wdt-test = []
+
+# Phase B bring-up aid: replaces the diagnostic loop with a tight loop that
+# hammers I²C reads at 0x38 (~6/s) so a logic analyzer always has traffic to
+# capture, alternating the P0.13 rail every ~5 s. Run with
+# `cargo run --release --features i2c-probe`. Temporary debug build.
+i2c-probe = []
+
 # Production builds: stable, size-optimised.
 [profile.release]
 debug = 2

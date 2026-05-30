@@ -50,10 +50,13 @@ This document is the **build-ready hardware specification** for the smart home t
           │              ┌─────────────────────┐
           │              │ AHT20 (U2)          │
           │              └─────────────────────┘
+          │                 decoupling at the AHT20 pins (across VCC↔GND):
+          │                 VCC ──┬──[ C1 = 100nF ]──┬── GND
+          │                       └──[ C3 = 1µF ]────┘
           │
           ├─[ R1 = 100k ]──┬──────────────► ADC (P0.31 / AIN7)
           │                │
-          │              [ C2 = 1nF ]
+          │                ├──[ C2 = 1nF ]──── GND   (shunt filter — NOT in series)
           │                │
           │             [ R2 = 100k ]
           │                │
@@ -242,12 +245,19 @@ First power-on (no firmware yet):
 
 ---
 
-## 9. Open Questions (resolve before firmware work)
+## 9. Open Questions
 
-1. **P0.13 polarity for VCC rail.** Sources conflict (Nice!Nano: HIGH = OFF; Teyleten README: HIGH = ON). Determine empirically on the actual board.
-2. **AHT20 breakout pull-up presence.** Visual inspection plus multimeter check.
-3. **Exact silkscreen-to-GPIO mapping** for the Teyleten Robot board you have in hand. Cross-reference against the longrackslabs repo *and* confirm with a continuity test for at least the four pins we use (D2, D3, D4, "18").
-4. **Battery voltage cutoff threshold.** Decide the minimum cell voltage at which the firmware should stop transmitting (typical: 3.0 V to protect the cell from over-discharge).
+**Resolved on the bench during Phase B** (see CLAUDE.md → Bench-Confirmed Facts):
+
+1. ✅ **P0.13 polarity for VCC rail: HIGH = ON** (LOW = off). The rail self-bleeds to ~0 when P0.13 goes low — no discharge part needed.
+2. ✅ **AHT20 pull-ups present** (~10 kΩ on SDA/SCL).
+3. ✅ **Pin mapping confirmed for the pins we use** — P0.13 (VCC), P0.17 (SDA), P0.20 (SCL), P0.22 (Q1-enable), P0.31 (AIN7) all verified by working firmware. ⚠️ **SCL (P0.20) and the Q1-enable (P0.22) are physically adjacent** — a solder bridge shorted them and silently killed I²C; keep that route clear.
+
+**New finding (Phase B):** the AHT20 **wedges if VCC is gated naively** — it back-powers through SDA/SCL and never POR-resets. It must be **power-cycled cleanly**: drive SDA+SCL low → cut VCC → bleed → re-power → re-init. Baked into the Phase C driver.
+
+**Still open (firmware decision, not a hardware unknown):**
+
+4. **Battery voltage cutoff threshold.** Decide the minimum cell voltage at which the firmware stops transmitting (typical: 3.0 V to protect the cell from over-discharge).
 
 ---
 

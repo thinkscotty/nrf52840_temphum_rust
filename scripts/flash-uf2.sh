@@ -36,6 +36,24 @@ python3 "$SCRIPT_DIR/uf2conv.py" \
 SIZE=$(wc -c < "$UF2" | tr -d ' ')
 echo "[uf2] $UF2 ($SIZE bytes)"
 
+# If the board isn't already in DFU but is running firmware that has the
+# DfuHandler, bounce it into the bootloader by sending "dfu" over USB-CDC — no
+# reset-button double-tap needed. Falls back to manual instructions below.
+if [ ! -d "$UF2_VOLUME" ]; then
+    DEV=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)
+    if [ -n "$DEV" ]; then
+        echo "[uf2] bouncing $DEV into DFU (sending 'dfu')..."
+        printf 'dfu\n' > "$DEV" 2>/dev/null || true
+        for _ in $(seq 1 50); do
+            [ -d "$UF2_VOLUME" ] && break
+            sleep 0.2
+        done
+        # The freshly-mounted FAT volume isn't write-ready the instant it appears;
+        # copying too soon races the mount and the bootloader ignores the UF2.
+        [ -d "$UF2_VOLUME" ] && sleep 2
+    fi
+fi
+
 if [ -d "$UF2_VOLUME" ]; then
     echo "[uf2] copying to $UF2_VOLUME ..."
     # `cp -X` skips macOS extended attributes (FAT can't store them, and
@@ -47,12 +65,12 @@ if [ -d "$UF2_VOLUME" ]; then
     sync 2>/dev/null || true
     # The bootloader ejects the volume asynchronously once the UF2 is fully
     # written, so poll for the unmount rather than checking instantly.
-    for _ in $(seq 1 50); do
+    for _ in $(seq 1 100); do
         [ -d "$UF2_VOLUME" ] || break
         sleep 0.1
     done
     if [ -d "$UF2_VOLUME" ]; then
-        echo "[uf2] WARNING: $UF2_VOLUME still mounted after 5s — flash may not have taken."
+        echo "[uf2] WARNING: $UF2_VOLUME still mounted after 10s — flash may not have taken."
         exit 1
     fi
     echo "[uf2] done. Board rebooted into the new firmware."

@@ -41,3 +41,11 @@ The goal of this project is to create a 'standard', stable sensor for my smart h
 ## Notes
 - Before we start creating code, we need to create a clear hardware build plan with pins
 - Research the dev board pinout before deciding on pin numbers
+
+## Bench-Confirmed Facts (Phase B — verified on hardware)
+- **P0.13 VCC-rail polarity: HIGH = rail ON** (LOW = off). The rail bleeds to ~0 on its own when P0.13 goes low.
+- **AHT20 must be power-cycled cleanly or it wedges.** Naive gating (just cut VCC) leaves it back-powered through SDA/SCL so it never POR-resets. Fix (verified): drive SDA(P0.17)+SCL(P0.20) LOW → set P0.13 LOW → bleed ~500ms → P0.13 HIGH → re-init TWIM → wait ~100ms. The Phase C `aht20.rs` driver must use this.
+- **AHT20 I²C address 0x38**, pull-ups ~10 kΩ present on the breakout.
+- **Battery divider is accurate enough to skip calibration for v1**: ideal `raw*3600/4096*2` matched a multimeter within ~10 mV (4.11 V). SAADC: AIN7/P0.31, gain 1/6, ref 0.6 V, 12-bit, 40 µs acq. P0.22 HIGH gates Q1 on; gate-OFF pegs near full-scale (divider bottom opens). Two-point cal (Phase G) is optional.
+- **Layout gotcha:** SCL (P0.20) and the battery-enable pin (P0.22) are physically adjacent — a solder bridge shorted them and silently killed I²C. Keep that route clear.
+- **Flashing is button-free**: firmware's `DfuHandler` reboots into UF2 DFU when it sees `dfu` on the USB-CDC input; `cargo run` triggers it automatically. Double-tap reset only needed for handler-less firmware.
