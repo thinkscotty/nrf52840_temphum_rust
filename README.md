@@ -9,15 +9,21 @@ the hardware build spec. The firmware implementation plan lives in
 
 ## Status
 
-**Phase B complete** — hardware bring-up verified on the bench. The on-board
-diagnostic confirms:
+**Phase C complete** — the production sensor drivers are written and verified on
+hardware. The default build runs a sample loop that prints one reading set every
+5 s over USB-CDC:
 
-- AHT20 answers on I²C at `0x38` (needs a clean power-cycle — see below)
-- Battery divider + 2N7000 gate read Vbat accurately (matches a multimeter; no
-  calibration needed for v1)
-- P0.13 VCC rail gating (HIGH = on)
+- `aht20.rs` — AHT20 driver with the bench-verified clean power-cycle baked in
+  (no wedging across consecutive cycles), 500 ms I²C timeouts, CRC8 check
+- `battery.rs` — SAADC + 2N7000-gated divider, ideal divider math (no cal for v1)
+- `sensors.rs` — `sample_all()` aggregator; a failed sensor becomes a `None`
+  field (logged, no panic) rather than aborting the cycle
 
-Next: **Phase C** — the real sensor drivers (`aht20.rs`, `battery.rs`).
+Earlier phases: **Phase B** verified the hardware on the bench (AHT20 at `0x38`,
+divider matches a multimeter, P0.13 VCC gating HIGH = on) — that diagnostic now
+lives behind the `bringup` feature.
+
+Next: **Phase D** — BLE + BTHome v2 broadcasting via nrf-softdevice (S140).
 
 ## Toolchain & flashing
 
@@ -47,9 +53,10 @@ Logs stream over **USB-CDC** (`log` crate via `embassy-usb-logger`):
 ### Build variants
 
 ```sh
-cargo run --release                      # default: hardware diagnostic loop
-cargo run --release --features wdt-test   # watchdog reset smoke test (resets once)
-cargo run --release --features i2c-probe  # continuous 0x38 reads for a logic analyzer
+cargo run --release                      # default: Phase C sensor sample loop
+cargo run --release --features bringup    # Phase B bring-up diagnostic (VCC/I²C/ADC)
+cargo run --release --features wdt-test    # watchdog reset smoke test (resets once)
+cargo run --release --features i2c-probe   # continuous 0x38 reads for a logic analyzer
 ```
 
 ### Other scripts
@@ -61,13 +68,18 @@ cargo run --release --features i2c-probe  # continuous 0x38 reads for a logic an
 
 The AHT20 is power-gated on the P0.13 VCC rail. It **must be power-cycled
 cleanly** — drive SDA/SCL low before cutting VCC, let the rail bleed, then
-re-init — or it back-powers through its I/O pins and never resets. The Phase C
-driver bakes this in; verified in the `i2c-probe` build.
+re-init — or it back-powers through its I/O pins and never resets. The
+[`aht20.rs`](src/aht20.rs) driver bakes this into every `measure()` call;
+verified across consecutive cycles in the default Phase C build.
 
 ## Layout
 
 ```
-src/main.rs        — entry point: Phase B hardware diagnostic + auto-DFU handler
+src/main.rs        — entry point: Phase C sample loop + auto-DFU handler
+                     (the Phase B diagnostic is behind `--features bringup`)
+src/aht20.rs       — AHT20 driver (owns the rail + I²C pins; clean power-cycle)
+src/battery.rs     — SAADC battery read via the 2N7000-gated divider
+src/sensors.rs     — sample_all() aggregator → Sample with Option fields
 memory.x           — linker memory regions (gains a SoftDevice region in Phase D)
 build.rs           — copies memory.x into OUT_DIR for the linker
 .cargo/config.toml — cross-target, UF2 runner, link args

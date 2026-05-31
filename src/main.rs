@@ -35,13 +35,23 @@ use embassy_time::Timer;
 use embassy_usb_logger::ReceiverHandler;
 use panic_halt as _;
 
-// SAADC + the scan helpers are only used by the full diagnostic.
-#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe")))]
+// Phase C production sensor drivers — the default build. Gated out of the
+// bring-up/test builds so their unused-in-that-config code can't warn.
+#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe", feature = "bringup")))]
+mod aht20;
+#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe", feature = "bringup")))]
+mod battery;
+#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe", feature = "bringup")))]
+mod sensors;
+
+// SAADC + the scan helpers are only used by the Phase B bring-up diagnostic.
+#[cfg(feature = "bringup")]
 use embassy_nrf::saadc::{self, ChannelConfig, Oversample, Resolution, Saadc, Time};
-// TWIM + timeout are shared by the full diagnostic and the i2c-probe build.
-#[cfg(not(feature = "wdt-test"))]
+// TWIM + timeout are used by the i2c-probe and bring-up diagnostics (the Phase C
+// default build talks to the bus only through the `aht20` module).
+#[cfg(any(feature = "i2c-probe", feature = "bringup"))]
 use embassy_nrf::twim::{self, Twim};
-#[cfg(not(feature = "wdt-test"))]
+#[cfg(any(feature = "i2c-probe", feature = "bringup"))]
 use embassy_time::{with_timeout, Duration};
 
 #[cfg(feature = "wdt-test")]
@@ -229,8 +239,55 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    // ============== Tests 1–3: VCC polarity, I²C scan, battery ADC ==============
-    #[cfg(not(any(feature = "wdt-test", feature = "i2c-probe")))]
+    // ===================== Phase C: sensor sample loop =====================
+    // The default build. Exercises the production drivers (`aht20`, `battery`,
+    // `sensors`) and prints one Sample every 5 s. Pull the AHT20 and its temp/
+    // humidity fields go `None` (logged once) while the battery keeps reading —
+    // the Phase C "no panic on a disconnected sensor" deliverable.
+    #[cfg(not(any(feature = "wdt-test", feature = "i2c-probe", feature = "bringup")))]
+    {
+        log::info!("");
+        log::info!("########## Phase C — sensor drivers (USB-CDC) ##########");
+        log::info!("One Sample every 5 s. Disconnect the AHT20 to see graceful None fields.");
+
+        let aht20 = aht20::Aht20::new(p.P0_13, p.TWISPI0, p.P0_17, p.P0_20, Irqs);
+        let battery = battery::Battery::new(p.SAADC, Irqs, p.P0_31, p.P0_22).await;
+        let mut sensors = sensors::Sensors::new(aht20, battery);
+
+        let mut cycle: u32 = 0;
+        loop {
+            cycle = cycle.wrapping_add(1);
+            let s = sensors.sample_all().await;
+
+            log::info!("---- sample {} (cycle_id {}) ----", cycle, s.cycle_id);
+            match s.temperature_c_centi {
+                Some(t) => {
+                    let sign = if t < 0 { "-" } else { "" };
+                    let a = (t as i32).abs();
+                    log::info!("  temperature: {}{}.{:02} °C", sign, a / 100, a % 100);
+                }
+                None => log::info!("  temperature: --   (AHT20 read failed)"),
+            }
+            match s.humidity_rh_centi {
+                Some(h) => log::info!("  humidity:    {}.{:02} %RH", h / 100, h % 100),
+                None => log::info!("  humidity:    --   (AHT20 read failed)"),
+            }
+            match s.battery_mv {
+                Some(mv) => log::info!("  battery:     {}.{:03} V", mv / 1000, mv % 1000),
+                None => log::info!("  battery:     --   (read failed)"),
+            }
+
+            // heartbeat
+            led.set_low();
+            Timer::after_millis(60).await;
+            led.set_high();
+
+            Timer::after_secs(5).await;
+        }
+    }
+
+    // ============== Bring-up: VCC polarity, I²C scan, battery ADC ==============
+    #[cfg(feature = "bringup")]
     {
         // VCC-rail control. Boot LOW (we don't yet know which level is "off");
         // test 1 discovers it. P0.22 = Q1 gate: boot LOW so the battery divider
@@ -346,7 +403,7 @@ async fn main(spawner: Spawner) {
 }
 
 /// Result of one I²C address sweep.
-#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe")))]
+#[cfg(feature = "bringup")]
 struct ScanResult {
     /// Number of addresses that ACKed.
     count: u8,
@@ -359,7 +416,7 @@ struct ScanResult {
 /// Sweep 7-bit addresses 0x08..=0x77 with a 1-byte read; an ACK marks a device.
 /// Each read is bounded by a timeout so a stuck bus (no pull-ups) can't hang us;
 /// four consecutive timeouts with nothing found means the bus is dead and we bail.
-#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe")))]
+#[cfg(feature = "bringup")]
 async fn i2c_scan(i2c: &mut Twim<'_>) -> ScanResult {
     let mut count = 0u8;
     let mut found_aht = false;
@@ -407,7 +464,7 @@ async fn i2c_scan(i2c: &mut Twim<'_>) -> ScanResult {
     }
 }
 
-#[cfg(not(any(feature = "wdt-test", feature = "i2c-probe")))]
+#[cfg(feature = "bringup")]
 fn report_scan(state: &str, r: &ScanResult) {
     if r.bus_dead {
         log::info!(

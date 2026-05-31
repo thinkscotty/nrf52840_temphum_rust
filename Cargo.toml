@@ -42,6 +42,13 @@ embassy-usb-logger = "0.6.0"
 log = "0.4"
 
 [features]
+# Phase B bring-up diagnostic: VCC-rail polarity sweep, I²C address scan, and a
+# raw battery-ADC readout, logged over USB-CDC. This was the Phase B default;
+# Phase C promoted the sensor-driver sample loop to the default build, so the
+# old diagnostic now lives behind this flag. Run with
+# `cargo run --release --features bringup`.
+bringup = []
+
 # Phase B test 4: deliberately stops petting a 5 s watchdog to prove it resets
 # the chip. Isolated behind a feature so the destructive reset doesn't interrupt
 # the readable tests 1–3. Run with `cargo run --release --features wdt-test`;
